@@ -49,6 +49,7 @@ typedef struct {
     uint32_t freq_hz;
     uint16_t target_vpp10;
     uint16_t output_mVpp;
+    uint16_t duty_pct10;
     uint8_t wave;
 } HmiEvent;
 

@@ -67,7 +67,7 @@ static uint32_t s_op_start_ms;
 
 /* RX ring: bytes land here from the UART IRQ and are parsed in the main
  * loop, so screen refreshes never run (and never block) in IRQ context. */
-#define RX_RING_LEN 64u
+#define RX_RING_LEN 256u
 static volatile uint8_t s_rx_ring[RX_RING_LEN];
 static volatile uint8_t s_rx_head;
 static volatile uint8_t s_rx_tail;
@@ -86,6 +86,7 @@ static uint8_t  s_led_state;
 static uint8_t  s_key_last;
 static uint32_t s_key_ms;
 static uint8_t  s_emu_shown_state;
+static uint8_t  s_output_active;
 static uint16_t s_hmi_err_count;   /* framing glitches survived */
 
 static void hmi_write_adapter(const uint8_t *data, uint16_t len, void *user)
@@ -128,6 +129,7 @@ static void stop_outputs(void)
     WaveOut_Enable(0u);
     Learn_Abort();
     Emu_Abort();
+    s_output_active = 0u;
     (void)FpgaCtrl_SendStopHint(s_io.fpga_write);
 }
 
@@ -196,8 +198,10 @@ static void do_start_basic(uint32_t freq_hz, uint16_t vpp10)
         WaveOut_BuildSine(km.input_mVpp);
         WaveOut_SetFreqMilliHz((uint64_t)freq_hz * 1000u);
         WaveOut_Enable(1u);
+        s_output_active = 1u;
     } else {
         WaveOut_Enable(0u);
+        s_output_active = (uint8_t)(fr.sent ? 1u : 0u);
     }
 
     if (fr.sent && !fr.code_ok) {
@@ -212,6 +216,7 @@ static void do_start_basic(uint32_t freq_hz, uint16_t vpp10)
 
 static void do_start_learn(void)
 {
+    s_output_active = 0u;
     WaveOut_Enable(0u);
     Emu_Abort();
     s_learn_percent_shown = 0xFFu;
@@ -237,24 +242,28 @@ static void do_start_emulate(uint8_t wave_hint)
     HmiScreen_SetRunState(&s_screen, HMI_RUN_RUNNING);
 
     Emu_Start((model != 0 && model->valid) ? model : 0, wave_hint, now_ms());
+    s_output_active = (uint8_t)((model != 0 && model->valid) ? 1u : 0u);
     start_local_task(APP_OP_EMULATE);
 }
 
 static void do_calib_output(const HmiEvent *ev)
 {
     uint16_t aux_mVpp;
+    char duty_text[16];
+    uint8_t fpga_supported;
 
     Learn_Abort();
     Emu_Abort();
     WaveOut_Enable(0u); /* explicit: never rebuild a table mid-stream */
 
-    HmiScreen_Goto(&s_screen, HMI_PAGE_CALIB);
-    HmiScreen_SetMode(&s_screen, HMI_MODE_CALIB);
-    HmiScreen_SetWave(&s_screen, ev->wave);
-    HmiScreen_SetRunState(&s_screen, HMI_RUN_RUNNING);
+    s_screen.page = HMI_PAGE_CALIB;
+    s_screen.mode = HMI_MODE_CALIB;
+    s_screen.wave = ev->wave;
+    s_screen.run_state = HMI_RUN_RUNNING;
 
     /* FPGA Basic_two path: exact grid only, fixed ~3.5 Vpp amplitude */
-    if (FpgaCtrl_Basic2Supported(ev->freq_hz)) {
+    fpga_supported = FpgaCtrl_Basic2Supported(ev->freq_hz);
+    if (fpga_supported) {
         (void)FpgaCtrl_SendBasic2Freq(s_io.fpga_write, ev->freq_hz);
     }
 
@@ -263,8 +272,11 @@ static void do_calib_output(const HmiEvent *ev)
                                                     : ev->output_mVpp;
     if (ev->freq_hz <= AUX_MAX_FREQ_HZ && aux_mVpp > 0u) {
         if (ev->wave == HMI_WAVE_SQUARE) {
-            WaveOut_BuildSquare(aux_mVpp, 500u);
-            HmiScreen_ShowCalibDuty(&s_screen, "50.0 %");
+            WaveOut_BuildSquare(aux_mVpp, ev->duty_pct10);
+            (void)snprintf(duty_text, sizeof(duty_text), "%u.%u %%",
+                           (unsigned)(ev->duty_pct10 / 10u),
+                           (unsigned)(ev->duty_pct10 % 10u));
+            HmiScreen_ShowCalibDuty(&s_screen, duty_text);
         } else if (ev->wave == HMI_WAVE_OTHER) {
             /* triangle stands in for "other" (FPGA ROM parity) */
             static float tri[64];
@@ -282,15 +294,18 @@ static void do_calib_output(const HmiEvent *ev)
         }
         WaveOut_SetFreqMilliHz((uint64_t)ev->freq_hz * 1000u);
         WaveOut_Enable(1u);
+        s_output_active = 1u;
         HmiScreen_ShowCalibMeasure(&s_screen, aux_mVpp);
-    } else if (FpgaCtrl_Basic2Supported(ev->freq_hz)) {
+    } else if (fpga_supported) {
         /* above aux range but on the FPGA grid (1 MHz / 2 MHz points) */
         WaveOut_Enable(0u);
+        s_output_active = 1u;
         HmiScreen_ShowCalibMeasure(&s_screen, 3500u);
         HmiScreen_ShowCalibDuty(&s_screen, "FPGA OUT");
     } else {
         /* neither output path can generate this point - say so */
         WaveOut_Enable(0u);
+        s_output_active = 0u;
         HmiScreen_ShowCalibMeasure(&s_screen, 0u);
         HmiScreen_ShowCalibDuty(&s_screen, "OUT OF RANGE");
     }
@@ -361,6 +376,7 @@ void GApp_Init(const GAppIo *io)
     s_learn_percent_shown = 0xFFu;
     s_emu_shown_state = 0xFFu;
     s_key_last = 0u;
+    s_output_active = 0u;
 
     HmiProtocol_Init(&s_hmi_parser);
     HmiScreen_Init(&s_screen, hmi_write_adapter, 0);
@@ -399,7 +415,7 @@ static void drain_hmi_rx(void)
              * operation is active we just count the glitch and move on.
              * Only surface the error page when the device is idle.      */
             ++s_hmi_err_count;
-            if (s_op == APP_OP_NONE) {
+            if (s_op == APP_OP_NONE && s_output_active == 0u) {
                 enter_error((uint16_t)(ERR_HMI_BASE +
                                        HmiProtocol_LastError(&s_hmi_parser)),
                             "HMI FRAME");

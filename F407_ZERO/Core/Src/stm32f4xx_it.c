@@ -22,6 +22,7 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "bsp_uart.h"
 #include "usart.h"
 /* USER CODE END Includes */
 
@@ -228,7 +229,7 @@ void DMA2_Stream0_IRQHandler(void)
   */
 void USART1_IRQHandler(void)
 {
-  HAL_UART_IRQHandler(&huart1);
+  BspUart_USART1_IRQHandler();
 }
 
 /**

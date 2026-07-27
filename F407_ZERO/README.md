@@ -21,7 +21,7 @@ STM32F407ZGT6 负责：串口屏交互、已知模型反算、FPGA DDS 码表下
 
 | 题目条目 | 固件实现 |
 |---|---|
-| 基本(2) 信号源 | 波形设定页 `CALIB_OUTPUT`：FPGA Basic_two 码（100Hz~3kHz 步 100Hz、1MHz、2MHz，约 3.5Vpp）+ J_OUT 辅助输出（≤200kHz，幅度 0~5000mVpp 可设） |
+| 基本(2) 信号源 | 波形设定页 `CALIB_OUTPUT`：FPGA Basic_two 码（100Hz~3kHz 步 100Hz、1MHz、2MHz，约 3.5Vpp）+ J_OUT 辅助输出（≤200kHz，幅度 0~5000mVpp 可设；矩形占空比 10%~50%、5% 步进） |
 | 基本(3)(4) 已知模型控制 | `START_BASIC`：按 H(s)=5/(1e-8s²+3e-4s+1) 反算 Vin，下发 FPGA Basic_four 双字节码，并在 J_OUT 同步输出同频同幅精密正弦（开环，无输出端反馈，符合题目说明） |
 | 发挥(1) 学习建模 | 学习键触发：驱动 FPGA Develop_one 扫频 1k~50kHz（491 点），双 ADC 同步测幅比，四型最小二乘拟合分类（低通/高通/带通/带阻），屏显类型 + f0/Q + R/L/C 估计；实测 10~15s，预算上限 110s |
 | 发挥(2) 等效输出 | `START_EMULATE`：测输入频率（精度~1e-5，吸附 200Hz 栅格）/波形/占空比 → 周期折叠 → 谐波(≤64 次)×H(jkω) → 软件 DDS 从 J_OUT 输出；启动 <1s（题目限 5s），每 2s 重锁定，双踪无漂移 |

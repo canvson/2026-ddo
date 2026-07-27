@@ -38,6 +38,14 @@ static bool valid_wave(uint8_t wave)
     return wave <= HMI_WAVE_OTHER;
 }
 
+static bool valid_square_duty(uint16_t duty_pct10)
+{
+    if (duty_pct10 < 100u || duty_pct10 > 500u) {
+        return false;
+    }
+    return (duty_pct10 % 50u) == 0u;
+}
+
 static bool decode_frame(uint8_t cmd, const uint8_t *data, uint8_t len, HmiEvent *event,
                          HmiProtocolError *err)
 {
@@ -45,6 +53,7 @@ static bool decode_frame(uint8_t cmd, const uint8_t *data, uint8_t len, HmiEvent
     event->freq_hz = 0u;
     event->target_vpp10 = 0u;
     event->output_mVpp = 0u;
+    event->duty_pct10 = 500u;
     event->wave = HMI_WAVE_SINE;
 
     switch ((HmiCommand)cmd) {
@@ -84,19 +93,23 @@ static bool decode_frame(uint8_t cmd, const uint8_t *data, uint8_t len, HmiEvent
         return true;
 
     case HMI_CMD_CALIB_OUTPUT:
-        if (len != 7u) {
+        if (len != 7u && len != 9u) {
             *err = HMI_ERR_BAD_LEN;
             return false;
         }
         event->freq_hz = rd_u32_le(&data[0]);
         event->output_mVpp = rd_u16_le(&data[4]);
         event->wave = data[6];
+        if (len == 9u) {
+            event->duty_pct10 = rd_u16_le(&data[7]);
+        }
         /* 2 MHz upper bound: the FPGA Basic_two table also has a 2 MHz code */
         if (event->freq_hz < 1u || event->freq_hz > 2000000u) {
             *err = HMI_ERR_OUT_OF_RANGE;
             return false;
         }
-        if (event->output_mVpp > 5000u || !valid_wave(event->wave)) {
+        if (event->output_mVpp > 5000u || !valid_wave(event->wave) ||
+            !valid_square_duty(event->duty_pct10)) {
             *err = HMI_ERR_OUT_OF_RANGE;
             return false;
         }

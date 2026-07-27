@@ -222,6 +222,7 @@ static void test_hmi_protocol(void)
 {
     static const uint8_t f1[] = {0xAA,0x31,0x06,0x64,0x00,0x00,0x00,0x0A,0x00,0x4F,0x55};
     static const uint8_t f2[] = {0xAA,0x35,0x07,0x40,0x42,0x0F,0x00,0xB8,0x0B,0x01,0x3B,0x55};
+    static const uint8_t f3[] = {0xAA,0x35,0x09,0x40,0x42,0x0F,0x00,0xB8,0x0B,0x01,0x2C,0x01,0x6A,0x55};
     HmiParser p;
     HmiEvent ev;
     HmiParseResult r = HMI_PARSE_NONE;
@@ -236,7 +237,14 @@ static void test_hmi_protocol(void)
     for (i = 0; i < sizeof(f2); ++i) r = HmiProtocol_PushByte(&p, f2[i], &ev);
     CHECK(r == HMI_PARSE_FRAME_OK, "frame2 parse");
     CHECK(ev.cmd == HMI_CMD_CALIB_OUTPUT && ev.freq_hz == 1000000 &&
-          ev.output_mVpp == 3000 && ev.wave == 1, "frame2 fields");
+          ev.output_mVpp == 3000 && ev.wave == 1 && ev.duty_pct10 == 500,
+          "frame2 fields");
+
+    for (i = 0; i < sizeof(f3); ++i) r = HmiProtocol_PushByte(&p, f3[i], &ev);
+    CHECK(r == HMI_PARSE_FRAME_OK, "frame3 parse");
+    CHECK(ev.cmd == HMI_CMD_CALIB_OUTPUT && ev.freq_hz == 1000000 &&
+          ev.output_mVpp == 3000 && ev.wave == 1 && ev.duty_pct10 == 300,
+          "frame3 fields");
     printf("hmi_protocol: example frames OK\n");
 }
 
