@@ -460,36 +460,6 @@
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c</FilePath>
             </File>
-            <File>
-              <FileName>stm32f4xx_hal_adc.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_adc_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_dac.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dac.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_dac_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dac_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_tim.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_tim_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
@@ -521,29 +491,14 @@
               <FilePath>../Core/Src/stm32f4xx_hal_msp.c</FilePath>
             </File>
             <File>
-              <FileName>adc.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Core/Src/adc.c</FilePath>
-            </File>
-            <File>
-              <FileName>dac.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Core/Src/dac.c</FilePath>
-            </File>
-            <File>
               <FileName>dma.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/dma.c</FilePath>
             </File>
-            <File>
-              <FileName>tim.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Core/Src/tim.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
-          <GroupName>Application/G题</GroupName>
+          <GroupName>Application/WaveControl</GroupName>
           <Files>
             <File>
               <FileName>g_app.c</FileName>
@@ -561,54 +516,14 @@
               <FilePath>../Application/Src/hmi_protocol.c</FilePath>
             </File>
             <File>
-              <FileName>hmi_screen.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/hmi_screen.c</FilePath>
-            </File>
-            <File>
               <FileName>fpga_ctrl.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Application/Src/fpga_ctrl.c</FilePath>
             </File>
             <File>
-              <FileName>known_model.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/known_model.c</FilePath>
-            </File>
-            <File>
               <FileName>bsp_board.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Application/Src/bsp_board.c</FilePath>
-            </File>
-            <File>
-              <FileName>fpga_ctrl_table.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/fpga_ctrl_table.c</FilePath>
-            </File>
-            <File>
-              <FileName>signal_meas.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/signal_meas.c</FilePath>
-            </File>
-            <File>
-              <FileName>rlc_model.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/rlc_model.c</FilePath>
-            </File>
-            <File>
-              <FileName>wave_out.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/wave_out.c</FilePath>
-            </File>
-            <File>
-              <FileName>learn_engine.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/learn_engine.c</FilePath>
-            </File>
-            <File>
-              <FileName>emulate_engine.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Application/Src/emulate_engine.c</FilePath>
             </File>
           </Files>
         </Group>

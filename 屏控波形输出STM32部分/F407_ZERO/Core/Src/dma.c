@@ -31,12 +31,9 @@ void MX_DMA_Init(void)
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream5_IRQn interrupt configuration (DAC stream) */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 1, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
-  /* DMA2_Stream0_IRQn interrupt configuration (ADC capture) */
-  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 2, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+  /* DMA2_Stream2_IRQn interrupt configuration (USART1 RX) */
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 3, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
 }
 
 /* USER CODE BEGIN 2 */

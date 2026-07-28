@@ -11,6 +11,7 @@
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart1_rx;
 
 void MX_USART1_UART_Init(void)
 {

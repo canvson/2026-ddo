@@ -27,8 +27,7 @@
 /* USER CODE END Includes */
 
 /* External variables --------------------------------------------------------*/
-extern DMA_HandleTypeDef hdma_adc1;
-extern DMA_HandleTypeDef hdma_dac1;
+extern DMA_HandleTypeDef hdma_usart1_rx;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
@@ -209,27 +208,19 @@ void SysTick_Handler(void)
 /* USER CODE END 1 */
 
 /**
-  * @brief This function handles DMA1 stream5 global interrupt (DAC stream).
-  */
-void DMA1_Stream5_IRQHandler(void)
-{
-  HAL_DMA_IRQHandler(&hdma_dac1);
-}
-
-/**
-  * @brief This function handles DMA2 stream0 global interrupt (ADC capture).
-  */
-void DMA2_Stream0_IRQHandler(void)
-{
-  HAL_DMA_IRQHandler(&hdma_adc1);
-}
-
-/**
   * @brief This function handles USART1 global interrupt.
   */
 void USART1_IRQHandler(void)
 {
   BspUart_USART1_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA2 stream2 global interrupt (USART1 RX).
+  */
+void DMA2_Stream2_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_usart1_rx);
 }
 
 /**

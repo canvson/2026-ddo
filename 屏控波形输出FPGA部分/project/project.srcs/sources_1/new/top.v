@@ -1,252 +1,353 @@
 `timescale 1ns / 1ps
+
 module top(
     input        Clk,
     input        Rst,
-	input        uart_rx,
+    input        uart_rx,
     input        Key_state,
-	input  [11:0]ad1_in,
-	output 		 ad1_clk,
+    input  [11:0] ad1_in,
+    output       ad1_clk,
 
-    output [13:0]DataA,
+    output reg [13:0] DataA,
     output       ClkA,
     output       WRTA,
 
-    output [13:0]DataB,
+    output reg [13:0] DataB,
     output       ClkB,
     output       WRTB,
-    
-	output reg   Led_1,
-	output reg   Led_2,
-	output reg   Led_3,
-	output reg   Led_uart
-    
+
+    output reg   Led_1,
+    output reg   Led_2,
+    output reg   Led_3,
+    output reg   Led_uart
 );
-/////////////////////////////////PLL//////////////////////////////////////
-wire CLK125M;//DA输出时钟
-wire CLK50M;//暂时没有用到
-wire CLK8M;//待分频时�?
-wire CLK4M;//分频结，用于AD采集
-wire locked;
-divider u_clk_divider (
-    .clk_in      (CLK8M),     
-    .rst_n       (Rst),       
-    .div_ratio   (16'd2), //二分�?(8M->4M)
-    .duty_cycle  (16'd1),   
-    .clk_out     (CLK4M)        
-);
+
+localparam [7:0]  FRAME_SOF      = 8'hA5;
+localparam [7:0]  FRAME_CMD      = 8'h41;
+localparam [7:0]  FRAME_DATA_LEN = 8'd28;
+localparam [7:0]  FRAME_EOF      = 8'h5A;
+localparam [7:0]  PROTO_VERSION  = 8'd1;
+
+localparam [1:0]  WAVE_SINE      = 2'd0;
+localparam [1:0]  WAVE_SQUARE    = 2'd1;
+localparam [1:0]  WAVE_TRIANGLE  = 2'd2;
+
+localparam [13:0] DAC_MID        = 14'd8192;
+localparam [13:0] DAC_MIN        = 14'd0;
+localparam [13:0] DAC_MAX        = 14'd16383;
+localparam [13:0] AMP_Q13_FULL   = 14'd8192;
+
+localparam [2:0]  ST_SOF         = 3'd0;
+localparam [2:0]  ST_CMD         = 3'd1;
+localparam [2:0]  ST_LEN         = 3'd2;
+localparam [2:0]  ST_DATA        = 3'd3;
+localparam [2:0]  ST_CHECK       = 3'd4;
+localparam [2:0]  ST_EOF         = 3'd5;
+
+wire clk_125m;
+wire mmcm_locked;
+
 MMCM inst_MMCM(
-        .clk_out1(CLK125M),
-        .clk_out2(CLK50M),
-		.clk_out3(CLK8M),
-        .resetn(Rst), 
-        .locked(locked),
-        .clk_in1(Clk)
+    .clk_out1(clk_125m),
+    .clk_out2(),
+    .clk_out3(),
+    .resetn(Rst),
+    .locked(mmcm_locked),
+    .clk_in1(Clk)
 );
-/////////////////////////////////AD采集//////////////////////////////////////
-wire [11:0]ad_ch1;
-assign ad1_clk=CLK4M;//硬件接口
-adc inst_adc(
-    .ad_clk(CLK4M),////////////？？？？？？�?//////
-    .Rst(Rst),
-    .ad1_in(ad1_in),
-    .ad_ch1(ad_ch1)
-);
-//输入为偏移码，无符号数，�?高位取反即可,//要被拿去做IIR滤波
-//ad_ch1_toIIR={~ad_ch1[11],ad_ch1[10:0]};
-/////////////////////////////////状�?�机//////////////////////////////////////
-parameter Basic_two    =3'd0;//基本�???2
-parameter Basic_three  =3'd1;//基本�???3
-parameter Basic_four   =3'd2;//基本�???3
-parameter Develop_one  =3'd3;//发挥�???1
-parameter Develop_two  =3'd4;//发挥�???2
-reg [2:0] state;
-reg [2:0] key_cnt;
-wire Key_state_valid;
-key_filter inst_Key_state(//按键消抖
-    .clk(CLK125M), 
-    .rst(~Rst), 
-    .button_in(Key_state),
-    .button_posedge(Key_state_valid),
-    .button_negedge(),
-    .button_out()   
-);  
-always @(posedge CLK125M or negedge Rst) begin//按键计数
-    if(!Rst)
-        key_cnt<=3'd0;
-    else if(Key_state_valid)begin
-        if(key_cnt>3'd4)
-            key_cnt<=3'd0;
-        else key_cnt<=key_cnt+1;
-    end
-        
-end
-always @(posedge CLK125M or negedge Rst) begin//状�?��?�择
-    if(!Rst)
-        state<=Basic_two;
-    else begin
-        case(key_cnt)
-        3'd0:state<=Basic_two;
-        3'd1:state<=Basic_three;
-        3'd2:state<=Basic_four;
-        3'd3:state<=Develop_one;
-        3'd4:state<=Develop_two;
-        default:state<=Basic_two;
-        endcase
+
+assign ClkA = clk_125m;
+assign WRTA = clk_125m;
+assign ClkB = clk_125m;
+assign WRTB = clk_125m;
+assign ad1_clk = 1'b0;
+
+reg [1:0] uart_rx_sync;
+
+always @(posedge clk_125m or negedge Rst) begin
+    if (!Rst) begin
+        uart_rx_sync <= 2'b11;
+    end else begin
+        uart_rx_sync <= {uart_rx_sync[0], uart_rx};
     end
 end
-/////////////////////////////////状�?�指示灯//////////////////////////////////////
-always @(posedge CLK125M or negedge Rst) begin
-	if(!Rst)begin
-		Led_1<=1;
-		Led_2<=1;
-		Led_3<=1;
-	end
-	else begin
-		case(state)
-		Basic_two:		begin  Led_1<=1;Led_2<=1;Led_3<=1;  end//全灭
-		Basic_three:    begin  Led_1<=0;Led_2<=1;Led_3<=1;  end//1�???
-		Basic_four:		begin  Led_1<=1;Led_2<=0;Led_3<=1;  end//2�???
-		Develop_one:	begin  Led_1<=1;Led_2<=1;Led_3<=0;  end//3�???
-		Develop_two:	begin  Led_1<=0;Led_2<=0;Led_3<=0;  end//全亮
-		default:		begin  Led_1<=1;Led_2<=1;Led_3<=1;  end//全灭
-		endcase
-	end 
-end
-/////////////////////////////////UART//////////////////////////////////////
-wire uart_rxd_sync;
-sync_signal #(
-	.WIDTH(1),
-	.N(2)
-)
-sync_signal_inst (
-	.clk(CLK125M),
-	.in({uart_rx}),
-	.out({uart_rxd_sync})
+
+wire [7:0] rx_byte;
+wire       rx_valid;
+
+uart_rx #(
+    .DATA_WIDTH(8)
+) inst_uart_rx (
+    .clk(clk_125m),
+    .rst(~Rst),
+    .m_axis_tdata(rx_byte),
+    .m_axis_tvalid(rx_valid),
+    .m_axis_tready(1'b1),
+    .rxd(uart_rx_sync[1]),
+    .busy(),
+    .overrun_error(),
+    .frame_error(),
+    .prescale(16'd136)
 );
 
-	wire [7:0] uart_rx_axis_tdata;
-	wire       uart_rx_axis_tvalid;
+reg [2:0] parser_state;
+reg [4:0] data_index;
+reg [7:0] checksum;
+reg [7:0] frame_data [0:27];
 
-	uart uart0 (
-		.clk(CLK125M),
-		.rst(~Rst),
-		// AXI input
-		.s_axis_tdata(8'b0),
-		.s_axis_tvalid(1'b0),
-		.s_axis_tready(),
-		// AXI output
-		.m_axis_tdata(uart_rx_axis_tdata),
-		.m_axis_tvalid(uart_rx_axis_tvalid),
-		.m_axis_tready(1'b1),
-		// uart
-		.rxd(uart_rxd_sync),
-		.txd(),
-		// status
-		.tx_busy(),
-		.rx_busy(),
-		.rx_overrun_error(),
-		.rx_frame_error(),
-		// configuration
-		.prescale(16'd136/* clk/(baut*8) */) //125MHz, 115200bps
-	);
-    reg [7:0] Rx_data [0:9];//可能不够
-	always @(posedge CLK125M or negedge Rst) begin
-		if(!Rst) begin
-			Rx_data[0] <= 0;//自己加的帧头
-			Rx_data[1] <= 0;
-			Rx_data[2] <= 0;
-			Rx_data[3] <= 0;
-			Rx_data[4] <= 0;
-			Rx_data[5] <= 0;
-			Rx_data[6] <= 0;
-			Rx_data[7] <= 0;
-			Rx_data[8] <= 0;
-			Rx_data[9] <= 0;
-			Led_uart<=1;
-		end
-		else begin
-			if(uart_rx_axis_tvalid) begin
-				Rx_data[0] <= uart_rx_axis_tdata;
-				Rx_data[1] <= Rx_data[0];
-				Rx_data[2] <= Rx_data[1];
-				Rx_data[3] <= Rx_data[2];
-				Rx_data[4] <= Rx_data[3];
-				Rx_data[5] <= Rx_data[4];
-				Rx_data[6] <= Rx_data[5];
-				Rx_data[7] <= Rx_data[6];
-				Rx_data[8] <= Rx_data[7];
-				Rx_data[9] <= Rx_data[8];
-				Led_uart<=~Led_uart;//LED指示
-			end
-		end
-	end
+reg [1:0]  flags;
+reg [1:0]  wave_a;
+reg [1:0]  wave_b;
+reg [31:0] fword_a;
+reg [31:0] fword_b;
+reg [13:0] amp_a_q13;
+reg [13:0] amp_b_q13;
+reg [31:0] duty_a_q32;
+reg [31:0] duty_b_q32;
+reg [31:0] phase_b_q32;
+reg        config_seen;
+reg        load_config;
 
-/////////////////////////////////DDS//////////////////////////////////////
-assign ClkA = CLK125M;
-assign WRTA = CLK125M;
-wire    [13:0]DDS_OUT;
-wire Develop_two_flag;
-DDS_AD9767 inst_DDS(
-    .CLK125M(CLK125M),
-    .Reset_n(Rst),
-    .DataA(DDS_OUT),
-    .Rx_Data_0(Rx_data[0]),
-    .Rx_Data_1(Rx_data[1]),
-    .Rx_Data_2(Rx_data[2]),
-    .Rx_Data_3(Rx_data[3]),
-    .Rx_Data_4(Rx_data[4]),
-    .Rx_Data_5(Rx_data[5]),
-    .Rx_Data_6(Rx_data[6]),
-    .Rx_Data_7(Rx_data[7]),
-    .Rx_Data_8(Rx_data[8]),
-    .Rx_Data_9(Rx_data[9]),
-	.uart_rx_axis_tvalid(uart_rx_axis_tvalid),
-    .state(state),
-	.Develop_two_flag(Develop_two_flag)
-);
-/////////////////////////////////IIR滤波//////////////////////////////////////
-wire[13:0]IIR_OUT;
-/*
-	    	接线	[11:0]ad_ch1;
-	   		输出	[13:0]IIR_OUT;
-			reg    [?:?] para_1;
-			reg    [?:?] para_2;
-			reg    [?:?] para_3;输入
-			reg    [?:?] para_4;
-			reg    [?:?] para_5;
-			reg    [?:?] para_6;
-always @(posedge CLK125M or negedge Rst) begin
-	if(!Rst)begin
-		para_1<=0;
-		'''
-		para_6<=0;
-	end
-	else if((帧头==？？)&&(state==Develop_two))begin
-		para_1<=Rx_data[?];
-		'''
-		para_6<=Rx_data[?];
-	end
-end
+function [13:0] clamp_amp_q13;
+    input [15:0] value;
+    begin
+        if (value > {2'b00, AMP_Q13_FULL}) begin
+            clamp_amp_q13 = AMP_Q13_FULL;
+        end else begin
+            clamp_amp_q13 = value[13:0];
+        end
+    end
+endfunction
 
-*/
-/////////////////////////////////DA多路选择//////////////////////////////////////
-reg da_sel;//0:作为DDS;1:作为纯DA
-assign DataA=(!da_sel)?DDS_OUT:IIR_OUT;
+always @(posedge clk_125m or negedge Rst) begin
+    if (!Rst) begin
+        parser_state <= ST_SOF;
+        data_index   <= 5'd0;
+        checksum     <= 8'd0;
+        flags        <= 2'b00;
+        wave_a       <= WAVE_SINE;
+        wave_b       <= WAVE_SINE;
+        fword_a      <= 32'd0;
+        fword_b      <= 32'd0;
+        amp_a_q13    <= 14'd0;
+        amp_b_q13    <= 14'd0;
+        duty_a_q32   <= 32'h80000000;
+        duty_b_q32   <= 32'h80000000;
+        phase_b_q32  <= 32'd0;
+        config_seen  <= 1'b0;
+        load_config  <= 1'b0;
+    end else begin
+        load_config <= 1'b0;
 
-always@(posedge CLK125M or negedge Rst)begin
-    if(!Rst)
-        da_sel <= 0;
-    else begin
-        if(Develop_two_flag == 1'b1)
-            da_sel <= 1;
-        else
-            da_sel <= 0;
+        if (rx_valid) begin
+            case (parser_state)
+                ST_SOF: begin
+                    if (rx_byte == FRAME_SOF) begin
+                        checksum <= FRAME_SOF;
+                        parser_state <= ST_CMD;
+                    end
+                end
+
+                ST_CMD: begin
+                    if (rx_byte == FRAME_CMD) begin
+                        checksum <= checksum + rx_byte;
+                        parser_state <= ST_LEN;
+                    end else if (rx_byte == FRAME_SOF) begin
+                        checksum <= FRAME_SOF;
+                        parser_state <= ST_CMD;
+                    end else begin
+                        parser_state <= ST_SOF;
+                    end
+                end
+
+                ST_LEN: begin
+                    if (rx_byte == FRAME_DATA_LEN) begin
+                        checksum <= checksum + rx_byte;
+                        data_index <= 5'd0;
+                        parser_state <= ST_DATA;
+                    end else if (rx_byte == FRAME_SOF) begin
+                        checksum <= FRAME_SOF;
+                        parser_state <= ST_CMD;
+                    end else begin
+                        parser_state <= ST_SOF;
+                    end
+                end
+
+                ST_DATA: begin
+                    frame_data[data_index] <= rx_byte;
+                    checksum <= checksum + rx_byte;
+                    if (data_index == 5'd27) begin
+                        parser_state <= ST_CHECK;
+                    end else begin
+                        data_index <= data_index + 5'd1;
+                    end
+                end
+
+                ST_CHECK: begin
+                    if (rx_byte == checksum) begin
+                        parser_state <= ST_EOF;
+                    end else if (rx_byte == FRAME_SOF) begin
+                        checksum <= FRAME_SOF;
+                        parser_state <= ST_CMD;
+                    end else begin
+                        parser_state <= ST_SOF;
+                    end
+                end
+
+                ST_EOF: begin
+                    if ((rx_byte == FRAME_EOF) &&
+                        (frame_data[0] == PROTO_VERSION) &&
+                        ((frame_data[1] & 8'hFC) == 8'h00) &&
+                        (frame_data[2] <= 8'd2) &&
+                        (frame_data[13] <= 8'd2)) begin
+
+                        flags       <= frame_data[1][1:0];
+                        wave_a      <= frame_data[2][1:0];
+                        fword_a     <= {frame_data[6], frame_data[5], frame_data[4], frame_data[3]};
+                        amp_a_q13   <= clamp_amp_q13({frame_data[8], frame_data[7]});
+                        duty_a_q32  <= {frame_data[12], frame_data[11], frame_data[10], frame_data[9]};
+
+                        wave_b      <= frame_data[13][1:0];
+                        fword_b     <= {frame_data[17], frame_data[16], frame_data[15], frame_data[14]};
+                        amp_b_q13   <= clamp_amp_q13({frame_data[19], frame_data[18]});
+                        duty_b_q32  <= {frame_data[23], frame_data[22], frame_data[21], frame_data[20]};
+                        phase_b_q32 <= {frame_data[27], frame_data[26], frame_data[25], frame_data[24]};
+
+                        config_seen <= 1'b1;
+                        load_config <= 1'b1;
+                    end
+                    parser_state <= ST_SOF;
+                end
+
+                default: begin
+                    parser_state <= ST_SOF;
+                end
+            endcase
+        end
     end
 end
-/////////////////////////////////ILA//////////////////////////////////////
-ila_0 inst_ila (
-	.clk(CLK125M), // input wire clk
 
-	.probe0(Rx_data[0]) // input wire [7:0] probe0
+wire enable_a = flags[0];
+wire enable_b = flags[1];
+
+reg [31:0] phase_acc_a;
+reg [31:0] phase_acc_b;
+
+always @(posedge clk_125m or negedge Rst) begin
+    if (!Rst) begin
+        phase_acc_a <= 32'd0;
+        phase_acc_b <= 32'd0;
+    end else if (load_config) begin
+        phase_acc_a <= 32'd0;
+        phase_acc_b <= 32'd0;
+    end else begin
+        if (enable_a) begin
+            phase_acc_a <= phase_acc_a + fword_a;
+        end else begin
+            phase_acc_a <= 32'd0;
+        end
+
+        if (enable_b) begin
+            phase_acc_b <= phase_acc_b + fword_b;
+        end else begin
+            phase_acc_b <= 32'd0;
+        end
+    end
+end
+
+wire [31:0] phase_b_eff = phase_acc_b - phase_b_q32;
+wire [11:0] rom_addr_a  = phase_acc_a[31:20];
+wire [11:0] rom_addr_b  = phase_b_eff[31:20];
+
+wire [13:0] sine_a;
+wire [13:0] sine_b;
+wire [13:0] tri_a;
+wire [13:0] tri_b;
+
+rom_sine inst_rom_sine_a (
+    .clka(clk_125m),
+    .addra(rom_addr_a),
+    .douta(sine_a)
 );
+
+rom_sine inst_rom_sine_b (
+    .clka(clk_125m),
+    .addra(rom_addr_b),
+    .douta(sine_b)
+);
+
+rom_triangular inst_rom_tri_a (
+    .clka(clk_125m),
+    .addra(rom_addr_a),
+    .douta(tri_a)
+);
+
+rom_triangular inst_rom_tri_b (
+    .clka(clk_125m),
+    .addra(rom_addr_b),
+    .douta(tri_b)
+);
+
+wire [13:0] square_a = (phase_acc_a < duty_a_q32) ? DAC_MAX : DAC_MIN;
+wire [13:0] square_b = (phase_b_eff < duty_b_q32) ? DAC_MAX : DAC_MIN;
+
+wire [13:0] raw_a =
+    (wave_a == WAVE_SQUARE)   ? square_a :
+    (wave_a == WAVE_TRIANGLE) ? tri_a :
+                                sine_a;
+
+wire [13:0] raw_b =
+    (wave_b == WAVE_SQUARE)   ? square_b :
+    (wave_b == WAVE_TRIANGLE) ? tri_b :
+                                sine_b;
+
+function [13:0] scale_sample;
+    input [13:0] sample;
+    input [13:0] amp_q13;
+    reg signed [15:0] centered;
+    reg signed [15:0] amp_signed;
+    reg signed [31:0] mixed;
+    reg signed [31:0] scaled;
+    begin
+        centered = $signed({2'b00, sample}) - 16'sd8192;
+        amp_signed = $signed({2'b00, amp_q13});
+        mixed = centered * amp_signed;
+        scaled = (mixed >>> 13) + 32'sd8192;
+
+        if (scaled < 32'sd0) begin
+            scale_sample = DAC_MIN;
+        end else if (scaled > 32'sd16383) begin
+            scale_sample = DAC_MAX;
+        end else begin
+            scale_sample = scaled[13:0];
+        end
+    end
+endfunction
+
+always @(posedge clk_125m or negedge Rst) begin
+    if (!Rst) begin
+        DataA <= DAC_MID;
+        DataB <= DAC_MID;
+    end else begin
+        DataA <= enable_a ? scale_sample(raw_a, amp_a_q13) : DAC_MID;
+        DataB <= enable_b ? scale_sample(raw_b, amp_b_q13) : DAC_MID;
+    end
+end
+
+always @(posedge clk_125m or negedge Rst) begin
+    if (!Rst) begin
+        Led_1    <= 1'b1;
+        Led_2    <= 1'b1;
+        Led_3    <= 1'b1;
+        Led_uart <= 1'b1;
+    end else begin
+        Led_1 <= ~enable_a;
+        Led_2 <= ~enable_b;
+        Led_3 <= ~(config_seen & mmcm_locked);
+        if (rx_valid) begin
+            Led_uart <= ~Led_uart;
+        end
+    end
+end
+
 endmodule

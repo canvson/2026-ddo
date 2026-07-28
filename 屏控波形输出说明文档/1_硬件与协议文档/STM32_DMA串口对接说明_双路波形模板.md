@@ -1,6 +1,6 @@
 # STM32 DMA 串口对接说明
 
-本次不修改 STM32 源码，但串口屏模板已经按 STM32 DMA 接收方式设计。STM32 必须把 USART1 配成 DMA 接收，不能依赖阻塞式接收。
+当前 STM32 固件已经收敛为串口屏到 FPGA 的通信中枢：USART1 用 DMA 接收串口屏 `AA 21 16` 配置帧，USART2 只向 FPGA 下发 `A5 41 1C` 双路 DDS 配置帧。主流程不再使用旧 G 题的 ADC、DAC、学习建模和等效输出模块。
 
 ## 串口配置
 
@@ -10,10 +10,10 @@
 | TX/RX | PA9 TX / PA10 RX |
 | 波特率 | 115200 |
 | 格式 | 8N1 |
-| 接收 | DMA |
+| 接收 | `HAL_UARTEx_ReceiveToIdle_DMA` |
 | 推荐方式 | `HAL_UARTEx_ReceiveToIdle_DMA` |
 
-如果当前工程使用循环 DMA + IDLE 中断，也可以；核心要求是 DMA 缓冲区里收到的每个字节都要按顺序喂给 `AA CMD LEN DATA CHECK 55` 解析状态机。
+USART2 配置为 `115200 8N1`，当前只使用 TX；FPGA 不回传状态，STM32 也不依赖 USART2 RX。
 
 ## 推荐接收流程
 
@@ -21,8 +21,10 @@
 2. 初始化 USART1 后调用 `HAL_UARTEx_ReceiveToIdle_DMA(&huart1, hmi_rx_dma, sizeof(hmi_rx_dma))`。
 3. 在 `HAL_UARTEx_RxEventCallback` 中读取本次新增字节。
 4. 对每个字节调用 HMI 协议解析器。
-5. 解析出 `OUTPUT_CONFIG` 后，先校验完整参数，再更新两路波形配置。
-6. 回调末尾重新启动 `HAL_UARTEx_ReceiveToIdle_DMA`。
+5. 解析出 `OUTPUT_CONFIG` 后，先校验完整参数。
+6. 把 Hz、mVpp、占空比和 B 相位换算为 FPGA DDS 参数。
+7. 通过 USART2 下发 `A5 41 1C DATA CHECK 5A`。
+8. 回调末尾重新启动 `HAL_UARTEx_ReceiveToIdle_DMA`。
 
 ## 数据结构建议
 
@@ -106,7 +108,7 @@ static void format_freq(uint32_t hz, char *out, size_t cap)
 
 ## 回屏建议
 
-STM32 发给屏幕的命令仍是 USART HMI 原生命令，每条指令后追加 `FF FF FF`：
+本版主流程不依赖回屏；如后续需要显示 STM32 已接收配置，发给屏幕的命令仍是 USART HMI 原生命令，每条指令后追加 `FF FF FF`：
 
 ```text
 n_a_freq.val=1000 FF FF FF

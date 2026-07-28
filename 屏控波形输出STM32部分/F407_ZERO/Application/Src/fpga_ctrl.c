@@ -1,94 +1,123 @@
 #include "fpga_ctrl.h"
-#include "fpga_ctrl_table.h"
 
-/*
- * Byte codes verified against DDS_AD9767.v (FPGA project is read-only):
- *
- * Basic_two, case(Rx_Data_0):
- *   n = freq/100 - 1 (0..29) written as "decimal digits read as hex":
- *   100..1000 Hz -> 0x00..0x09, 1100..2000 -> 0x10..0x19, 2100..3000 -> 0x20..0x29
- *   1 MHz -> 0x30, 2 MHz -> 0x31, anything else -> default 100 Hz.
- *
- * Basic_four, case({Rx_Data_1, Rx_Data_0}): see fpga_ctrl_table.c.
- *   The case has NO default branch, so unmatched pairs simply hold the
- *   previous output.  A leading 0xFF flush byte therefore guarantees the
- *   {flush, hi} intermediate pair never matches a real entry
- *   (no entry uses hi = 0xFF, and every real hi is 0x01/0x02).
- *
- * Develop_one: fre_cnt increments on every received byte (saturates at 490,
- *   only a hardware reset rewinds it) - one byte == one 100 Hz sweep step.
- */
-
-static uint8_t send_bytes(FpgaCtrlWriteFn write, const uint8_t *bytes, uint16_t len)
+static void wr_u16_le(uint8_t *p, uint16_t v)
 {
+    p[0] = (uint8_t)(v & 0xFFu);
+    p[1] = (uint8_t)((v >> 8) & 0xFFu);
+}
+
+static void wr_u32_le(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v & 0xFFu);
+    p[1] = (uint8_t)((v >> 8) & 0xFFu);
+    p[2] = (uint8_t)((v >> 16) & 0xFFu);
+    p[3] = (uint8_t)((v >> 24) & 0xFFu);
+}
+
+uint32_t FpgaCtrl_FwordFromHz(uint32_t freq_hz)
+{
+    uint64_t n = ((uint64_t)freq_hz << 32) + (FPGA_DDS_CLK_HZ / 2u);
+    return (uint32_t)(n / FPGA_DDS_CLK_HZ);
+}
+
+uint16_t FpgaCtrl_AmpToQ13(uint16_t amp_mVpp)
+{
+    uint32_t q = ((uint32_t)amp_mVpp * FPGA_AMP_Q13_FULL + 2500u) / 5000u;
+    return (q > FPGA_AMP_Q13_FULL) ? FPGA_AMP_Q13_FULL : (uint16_t)q;
+}
+
+uint32_t FpgaCtrl_DutyToQ32(uint16_t duty_pct10)
+{
+    uint64_t q = ((uint64_t)duty_pct10 << 32) + 500u;
+    return (uint32_t)(q / 1000u);
+}
+
+uint32_t FpgaCtrl_PhaseDegToQ32(int16_t phase_deg)
+{
+    uint16_t deg = (phase_deg < 0) ? (uint16_t)(phase_deg + 360) : (uint16_t)phase_deg;
+    uint64_t q = ((uint64_t)deg << 32) + 180u;
+    return (uint32_t)(q / 360u);
+}
+
+uint8_t FpgaCtrl_Checksum(uint8_t cmd, const uint8_t *data, uint8_t len)
+{
+    uint8_t sum = (uint8_t)(FPGA_FRAME_SOF + cmd + len);
+    uint8_t i;
+
+    for (i = 0u; i < len; ++i) {
+        sum = (uint8_t)(sum + data[i]);
+    }
+    return sum;
+}
+
+static void pack_channel(uint8_t *dst, const WaveChannelConfig *ch)
+{
+    dst[0] = ch->wave;
+    wr_u32_le(&dst[1], FpgaCtrl_FwordFromHz(ch->freq_hz));
+    wr_u16_le(&dst[5], FpgaCtrl_AmpToQ13(ch->amp_mVpp));
+    wr_u32_le(&dst[7], FpgaCtrl_DutyToQ32(ch->duty_pct10));
+}
+
+size_t FpgaCtrl_BuildDualWaveFrame(const DualWaveOutputConfig *cfg,
+                                   uint8_t *out, size_t out_cap)
+{
+    uint8_t *data;
+
+    if (!HmiProtocol_ValidateConfig(cfg) || out == 0 || out_cap < FPGA_DUAL_WAVE_FRAME_LEN) {
+        return 0u;
+    }
+
+    out[0] = FPGA_FRAME_SOF;
+    out[1] = FPGA_CMD_DUAL_WAVE_CONFIG;
+    out[2] = FPGA_DUAL_WAVE_DATA_LEN;
+    data = &out[3];
+
+    data[0] = cfg->proto_ver;
+    data[1] = cfg->flags;
+    pack_channel(&data[2], &cfg->ch_a);
+    pack_channel(&data[13], &cfg->ch_b);
+    wr_u32_le(&data[24], FpgaCtrl_PhaseDegToQ32(cfg->phase_b_rel_a_deg));
+
+    out[3u + FPGA_DUAL_WAVE_DATA_LEN] =
+        FpgaCtrl_Checksum(FPGA_CMD_DUAL_WAVE_CONFIG, data, FPGA_DUAL_WAVE_DATA_LEN);
+    out[4u + FPGA_DUAL_WAVE_DATA_LEN] = FPGA_FRAME_EOF;
+    return FPGA_DUAL_WAVE_FRAME_LEN;
+}
+
+uint8_t FpgaCtrl_SendDualWaveConfig(FpgaCtrlWriteFn write,
+                                    const DualWaveOutputConfig *cfg)
+{
+    uint8_t frame[FPGA_DUAL_WAVE_FRAME_LEN];
+    size_t len;
+
     if (write == 0) {
         return 0u;
     }
-    write(bytes, len);
-    return 1u;
-}
-
-uint8_t FpgaCtrl_Basic2Supported(uint32_t freq_hz)
-{
-    if (freq_hz == 1000000u || freq_hz == 2000000u) {
-        return 1u;
-    }
-    return (freq_hz >= 100u && freq_hz <= 3000u && (freq_hz % 100u) == 0u) ? 1u : 0u;
-}
-
-uint8_t FpgaCtrl_SendBasic2Freq(FpgaCtrlWriteFn write, uint32_t freq_hz)
-{
-    uint8_t code;
-    uint32_t n;
-
-    if (freq_hz == 1000000u) {
-        code = 0x30u;
-    } else if (freq_hz == 2000000u) {
-        code = 0x31u;
-    } else if (freq_hz >= 100u && freq_hz <= 3000u && (freq_hz % 100u) == 0u) {
-        n = (freq_hz / 100u) - 1u;
-        code = (uint8_t)(((n / 10u) << 4) | (n % 10u));
-    } else {
+    len = FpgaCtrl_BuildDualWaveFrame(cfg, frame, sizeof(frame));
+    if (len == 0u) {
         return 0u;
     }
-    return send_bytes(write, &code, 1u);
-}
-
-FpgaCtrlResult FpgaCtrl_SendBasic4(FpgaCtrlWriteFn write,
-                                   uint32_t freq_hz, uint16_t target_vpp10)
-{
-    FpgaCtrlResult res = {0u, 0u};
-    uint32_t fi;
-    uint32_t vi;
-    uint8_t frame[3];
-
-    if (freq_hz < 100u || freq_hz > 3000u || (freq_hz % 100u) != 0u) {
-        return res;
-    }
-    if (target_vpp10 < 10u || target_vpp10 > 20u) {
-        return res;
-    }
-
-    fi = (freq_hz / 100u) - 1u;
-    vi = (uint32_t)target_vpp10 - 10u;
-
-    frame[0] = 0xFFu; /* flush: {stale, 0xFF} and {0xFF, hi} match nothing */
-    frame[1] = g_fpga_basic4[fi][vi].hi;
-    frame[2] = g_fpga_basic4[fi][vi].lo;
-
-    res.sent = send_bytes(write, frame, 3u);
-    res.code_ok = g_fpga_basic4[fi][vi].code_ok;
-    return res;
-}
-
-uint8_t FpgaCtrl_SendLearnStep(FpgaCtrlWriteFn write)
-{
-    static const uint8_t step = 0x5Au; /* value is ignored by the FPGA */
-    return send_bytes(write, &step, 1u);
-}
-
-uint8_t FpgaCtrl_SendStopHint(FpgaCtrlWriteFn write)
-{
-    (void)write; /* intentionally silent - see header */
+    write(frame, (uint16_t)len);
     return 1u;
+}
+
+uint8_t FpgaCtrl_SendDisabled(FpgaCtrlWriteFn write,
+                              const DualWaveOutputConfig *last_cfg)
+{
+    DualWaveOutputConfig cfg;
+
+    if (last_cfg != 0 && HmiProtocol_ValidateConfig(last_cfg)) {
+        cfg = *last_cfg;
+    } else {
+        cfg.proto_ver = 1u;
+        cfg.flags = 0u;
+        cfg.ch_a.wave = HMI_WAVE_SINE;
+        cfg.ch_a.freq_hz = 1000u;
+        cfg.ch_a.amp_mVpp = 0u;
+        cfg.ch_a.duty_pct10 = 500u;
+        cfg.ch_b = cfg.ch_a;
+        cfg.phase_b_rel_a_deg = 0;
+    }
+    cfg.flags = 0u;
+    return FpgaCtrl_SendDualWaveConfig(write, &cfg);
 }

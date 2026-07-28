@@ -14,6 +14,11 @@ static uint16_t rd_u16_le(const uint8_t *p)
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
+static int16_t rd_s16_le(const uint8_t *p)
+{
+    return (int16_t)rd_u16_le(p);
+}
+
 static uint32_t rd_u32_le(const uint8_t *p)
 {
     return (uint32_t)p[0] |
@@ -22,103 +27,68 @@ static uint32_t rd_u32_le(const uint8_t *p)
            ((uint32_t)p[3] << 24);
 }
 
-static bool valid_basic_range(uint32_t freq_hz, uint16_t target_vpp10)
-{
-    if (freq_hz < 100u || freq_hz > 3000u) {
-        return false;
-    }
-    if ((freq_hz % 100u) != 0u) {
-        return false;
-    }
-    return target_vpp10 >= 10u && target_vpp10 <= 20u;
-}
-
 static bool valid_wave(uint8_t wave)
 {
-    return wave <= HMI_WAVE_OTHER;
+    return wave <= HMI_WAVE_TRIANGLE;
 }
 
-static bool valid_square_duty(uint16_t duty_pct10)
+static bool valid_channel(const WaveChannelConfig *ch)
 {
-    if (duty_pct10 < 100u || duty_pct10 > 500u) {
+    return valid_wave(ch->wave) &&
+           ch->freq_hz >= 1u && ch->freq_hz <= 20000000u &&
+           ch->amp_mVpp <= 5000u &&
+           ch->duty_pct10 >= 100u && ch->duty_pct10 <= 900u;
+}
+
+bool HmiProtocol_ValidateConfig(const DualWaveOutputConfig *cfg)
+{
+    if (cfg == 0) {
         return false;
     }
-    return (duty_pct10 % 50u) == 0u;
+    if (cfg->proto_ver != 1u || (cfg->flags & (uint8_t)~0x03u) != 0u) {
+        return false;
+    }
+    if (!valid_channel(&cfg->ch_a) || !valid_channel(&cfg->ch_b)) {
+        return false;
+    }
+    return cfg->phase_b_rel_a_deg >= -180 && cfg->phase_b_rel_a_deg <= 180;
+}
+
+static void decode_output_config(const uint8_t *data, DualWaveOutputConfig *cfg)
+{
+    cfg->proto_ver = data[0];
+    cfg->flags = data[1];
+    cfg->ch_a.wave = data[2];
+    cfg->ch_a.freq_hz = rd_u32_le(&data[3]);
+    cfg->ch_a.amp_mVpp = rd_u16_le(&data[7]);
+    cfg->ch_a.duty_pct10 = rd_u16_le(&data[9]);
+    cfg->ch_b.wave = data[11];
+    cfg->ch_b.freq_hz = rd_u32_le(&data[12]);
+    cfg->ch_b.amp_mVpp = rd_u16_le(&data[16]);
+    cfg->ch_b.duty_pct10 = rd_u16_le(&data[18]);
+    cfg->phase_b_rel_a_deg = rd_s16_le(&data[20]);
 }
 
 static bool decode_frame(uint8_t cmd, const uint8_t *data, uint8_t len, HmiEvent *event,
                          HmiProtocolError *err)
 {
-    event->cmd = (HmiCommand)cmd;
-    event->freq_hz = 0u;
-    event->target_vpp10 = 0u;
-    event->output_mVpp = 0u;
-    event->duty_pct10 = 500u;
-    event->wave = HMI_WAVE_SINE;
-
-    switch ((HmiCommand)cmd) {
-    case HMI_CMD_SET_BASIC:
-    case HMI_CMD_START_BASIC:
-        if (len != 6u) {
-            *err = HMI_ERR_BAD_LEN;
-            return false;
-        }
-        event->freq_hz = rd_u32_le(&data[0]);
-        event->target_vpp10 = rd_u16_le(&data[4]);
-        if (!valid_basic_range(event->freq_hz, event->target_vpp10)) {
-            *err = HMI_ERR_OUT_OF_RANGE;
-            return false;
-        }
-        return true;
-
-    case HMI_CMD_START_LEARN:
-    case HMI_CMD_STOP:
-    case HMI_CMD_CLEAR_ERROR:
-        if (len != 0u) {
-            *err = HMI_ERR_BAD_LEN;
-            return false;
-        }
-        return true;
-
-    case HMI_CMD_START_EMULATE:
-        if (len != 1u) {
-            *err = HMI_ERR_BAD_LEN;
-            return false;
-        }
-        event->wave = data[0];
-        if (!valid_wave(event->wave)) {
-            *err = HMI_ERR_OUT_OF_RANGE;
-            return false;
-        }
-        return true;
-
-    case HMI_CMD_CALIB_OUTPUT:
-        if (len != 7u && len != 9u) {
-            *err = HMI_ERR_BAD_LEN;
-            return false;
-        }
-        event->freq_hz = rd_u32_le(&data[0]);
-        event->output_mVpp = rd_u16_le(&data[4]);
-        event->wave = data[6];
-        if (len == 9u) {
-            event->duty_pct10 = rd_u16_le(&data[7]);
-        }
-        /* 2 MHz upper bound: the FPGA Basic_two table also has a 2 MHz code */
-        if (event->freq_hz < 1u || event->freq_hz > 2000000u) {
-            *err = HMI_ERR_OUT_OF_RANGE;
-            return false;
-        }
-        if (event->output_mVpp > 5000u || !valid_wave(event->wave) ||
-            !valid_square_duty(event->duty_pct10)) {
-            *err = HMI_ERR_OUT_OF_RANGE;
-            return false;
-        }
-        return true;
-
-    default:
+    if (cmd != HMI_CMD_OUTPUT_CONFIG) {
         *err = HMI_ERR_BAD_CMD;
         return false;
     }
+    if (len != HMI_OUTPUT_CONFIG_LEN) {
+        *err = HMI_ERR_BAD_LEN;
+        return false;
+    }
+
+    event->cmd = cmd;
+    decode_output_config(data, &event->output);
+    if (!HmiProtocol_ValidateConfig(&event->output)) {
+        *err = HMI_ERR_OUT_OF_RANGE;
+        return false;
+    }
+    *err = HMI_ERR_NONE;
+    return true;
 }
 
 void HmiProtocol_Init(HmiParser *parser)
@@ -209,7 +179,9 @@ HmiProtocolError HmiProtocol_LastError(const HmiParser *parser)
 uint8_t HmiProtocol_Checksum(uint8_t cmd, const uint8_t *data, uint8_t len)
 {
     uint8_t sum = (uint8_t)(HMI_FRAME_SOF + cmd + len);
-    for (uint8_t i = 0u; i < len; ++i) {
+    uint8_t i;
+
+    for (i = 0u; i < len; ++i) {
         sum = (uint8_t)(sum + data[i]);
     }
     return sum;
@@ -218,13 +190,15 @@ uint8_t HmiProtocol_Checksum(uint8_t cmd, const uint8_t *data, uint8_t len)
 size_t HmiProtocol_BuildFrame(uint8_t cmd, const uint8_t *data, uint8_t len,
                               uint8_t *out, size_t out_cap)
 {
+    uint8_t i;
+
     if (len > HMI_MAX_DATA || out_cap < (size_t)len + 5u) {
         return 0u;
     }
     out[0] = HMI_FRAME_SOF;
     out[1] = cmd;
     out[2] = len;
-    for (uint8_t i = 0u; i < len; ++i) {
+    for (i = 0u; i < len; ++i) {
         out[3u + i] = data[i];
     }
     out[3u + len] = HmiProtocol_Checksum(cmd, data, len);
