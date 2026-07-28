@@ -1,0 +1,24 @@
+# Local tool state
+.embeddedskills/
+.tmp_*.patch
+.git-stm32-backup-*/
+
+# HMI IDE binary project/export files
+屏控波形输出串口屏部分/*.HMI
+
+# Keil build output
+屏控波形输出STM32部分/F407_ZERO/MDK-ARM/F407_ZERO/
+屏控波形输出STM32部分/F407_ZERO/host_test/*.exe
+屏控波形输出STM32部分/F407_ZERO/MDK-ARM/*.lst
+屏控波形输出STM32部分/F407_ZERO/MDK-ARM/*.uvguix.*
+
+# Vivado generated output
+屏控波形输出FPGA部分/project/.Xil/
+屏控波形输出FPGA部分/project/project.cache/
+屏控波形输出FPGA部分/project/project.hw/
+屏控波形输出FPGA部分/project/project.ip_user_files/
+屏控波形输出FPGA部分/project/project.runs/
+屏控波形输出FPGA部分/project/project.sim/
+屏控波形输出FPGA部分/project/*.jou
+屏控波形输出FPGA部分/project/*.log
+屏控波形输出FPGA部分/project/*.str
