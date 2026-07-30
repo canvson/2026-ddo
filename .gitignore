@@ -8,15 +8,6 @@ tmp/
 __pycache__/
 *.pyc
 
-# HMI IDE binary project/export files
-屏控波形输出串口屏部分/*.HMI
-
-# Keil build output
-屏控波形输出STM32部分/F407_ZERO/MDK-ARM/F407_ZERO/
-屏控波形输出STM32部分/F407_ZERO/host_test/*.exe
-屏控波形输出STM32部分/F407_ZERO/MDK-ARM/*.lst
-屏控波形输出STM32部分/F407_ZERO/MDK-ARM/*.uvguix.*
-
 # 2026 G STM32 build/test output
 2026年G题STM32部分/F407_ZERO/MDK-ARM/F407_ZERO/
 2026年G题STM32部分/F407_ZERO/MDK-ARM/*.lst
@@ -28,16 +19,3 @@ __pycache__/
 
 # 2026 G protocol self-test binaries
 2026年G题串口屏与通信协议/tools/*.exe
-
-# Vivado generated output
-屏控波形输出FPGA部分/project/.Xil/
-屏控波形输出FPGA部分/project/project.srcs/sources_1/ip/ila_0/
-屏控波形输出FPGA部分/project/project.srcs/sources_1/ip/vio_0/
-屏控波形输出FPGA部分/project/project.cache/
-屏控波形输出FPGA部分/project/project.hw/
-屏控波形输出FPGA部分/project/project.ip_user_files/
-屏控波形输出FPGA部分/project/project.runs/
-屏控波形输出FPGA部分/project/project.sim/
-屏控波形输出FPGA部分/project/*.jou
-屏控波形输出FPGA部分/project/*.log
-屏控波形输出FPGA部分/project/*.str
