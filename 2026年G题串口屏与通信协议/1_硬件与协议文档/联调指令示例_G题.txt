@@ -1,0 +1,58 @@
+2026 G 题被动显示联调指令示例
+================================
+
+HMI -> STM32，115200 8N1
+帧格式：AA CMD LEN DATA CHECK 55
+
+1. 选择 1 周期
+AA 31 01 01 DD 55
+
+2. 选择 3 周期
+AA 31 01 03 DF 55
+
+3. 切到参数页
+AA 32 01 00 DD 55
+
+4. 切到波形页
+AA 32 01 01 DE 55
+
+5. 切到频谱页
+AA 32 01 02 DF 55
+
+
+FPGA -> STM32，921600 8N1
+帧格式：A5 5A type seq len_le payload crc16_le
+
+推荐用以下工具生成和校验帧：
+
+python ..\2026年G题STM32部分\F407_ZERO\host_test\fpga_serial_sim.py --self-test
+python ..\2026年G题STM32部分\F407_ZERO\host_test\fpga_serial_sim.py --port COMx
+
+FEATURE payload 固定 60 字节：
+frame_id:u32
+mode:u8
+status:u8
+component_count:u8
+flags:u8
+vpp_uv:i32
+urms_uv:i32
+f1_hz:u32
+reserved:u32
+component[3] = freq_hz:u32 + amp_peak_uv:i32 + phase_deg10:i16 + reserved:u16
+
+状态建议：
+WAIT=0
+VALID=1
+HOLD=2
+OVER_RANGE=3
+LINK_OR_ALGO_ERROR=4
+
+flags:
+bit0 = interference_suppressed
+bit1 = phase_valid
+
+波形约束：
+- component_count=1 时可不置 phase_valid，STM32 以 0 度为时间参考。
+- component_count>1 时必须置 phase_valid，并填写每个 phase_deg10。
+- 多分量缺相位时 page1 显示 PHASE REQUIRED，不画伪造波形；参数和频谱仍可刷新。
+- 当前协议没有原始/抽取波形点包。

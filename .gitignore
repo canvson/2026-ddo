@@ -1,7 +1,12 @@
 # Local tool state
 .embeddedskills/
+**/.embeddedskills/
 .tmp_*.patch
 .git-stm32-backup-*/
+backup_before_*/
+tmp/
+__pycache__/
+*.pyc
 
 # HMI IDE binary project/export files
 屏控波形输出串口屏部分/*.HMI
@@ -11,6 +16,18 @@
 屏控波形输出STM32部分/F407_ZERO/host_test/*.exe
 屏控波形输出STM32部分/F407_ZERO/MDK-ARM/*.lst
 屏控波形输出STM32部分/F407_ZERO/MDK-ARM/*.uvguix.*
+
+# 2026 G STM32 build/test output
+2026年G题STM32部分/F407_ZERO/MDK-ARM/F407_ZERO/
+2026年G题STM32部分/F407_ZERO/MDK-ARM/*.lst
+2026年G题STM32部分/F407_ZERO/MDK-ARM/*.uvguix.*
+2026年G题STM32部分/F407_ZERO/Objects/
+2026年G题STM32部分/F407_ZERO/host_test/*.exe
+2026年G题STM32部分/F407_ZERO/host_test/*.log
+2026年G题STM32部分/F407_ZERO/host_test/audit_*/
+
+# 2026 G protocol self-test binaries
+2026年G题串口屏与通信协议/tools/*.exe
 
 # Vivado generated output
 屏控波形输出FPGA部分/project/.Xil/
